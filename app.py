@@ -147,6 +147,11 @@ def detect_usb_drives():
                 path = os.path.join(base, entry)
                 if os.path.ismount(path):
                     usb_devices.append({"path": path, "label": entry})
+                elif os.path.isdir(path):
+                    for sub in os.listdir(path):
+                        subpath = os.path.join(path, sub)
+                        if os.path.ismount(subpath):
+                            usb_devices.append({"path": subpath, "label": sub})
     return usb_devices
 
 
@@ -289,6 +294,8 @@ def save_photo():
     device_path = data.get('path') if data else None
     if not device_path or not os.path.exists(device_path):
         return jsonify({'success': False, 'error': 'Périphérique USB invalide'})
+    if not os.path.ismount(device_path):
+        return jsonify({'success': False, 'error': "Le périphérique n'est pas monté"})
 
     photo_path = None
     if os.path.exists(os.path.join(PHOTOS_FOLDER, current_photo)):
@@ -299,7 +306,16 @@ def save_photo():
         return jsonify({'success': False, 'error': 'Photo introuvable'})
 
     try:
-        shutil.copy(photo_path, os.path.join(device_path, os.path.basename(photo_path)))
+        # Vérifier l'espace disponible
+        usage = shutil.disk_usage(device_path)
+        if usage.free < os.path.getsize(photo_path):
+            return jsonify({'success': False, 'error': 'Espace insuffisant sur la clé USB'})
+
+        # Créer un sous-dossier dédié
+        dest_dir = os.path.join(device_path, 'SimpleBooth')
+        os.makedirs(dest_dir, exist_ok=True)
+
+        shutil.copy(photo_path, os.path.join(dest_dir, os.path.basename(photo_path)))
         return jsonify({'success': True, 'message': 'Photo sauvegardée avec succès!'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})

@@ -21,7 +21,9 @@ Cette application transforme votre Raspberry Pi en un photobooth professionnel a
 - **Diaporama automatique** configurable après période d'inactivité
 - **Bot Telegram** pour envoi automatique des photos sur un groupe/canal
 - **Impression thermique** avec texte personnalisable
+- **Sauvegarde sur clé USB** avec détection automatique des périphériques montés
 - **Interface d'administration** complète
+- **Interface modernisée** avec animations et overlay de traitement
 
 ## 🔧️ Matériel requis
 
@@ -117,6 +119,9 @@ python3 app.py
 
 3. **Administration :**
    - Accéder à `/admin` pour configurer l'application
+
+4. **Sauvegarder une photo sur une clé USB :**
+   - Depuis la page de prévisualisation, utilisez le bouton "Sauvegarder" pour copier l'image dans le dossier `SimpleBooth` du périphérique choisi
 
 ## Configuration des caméras
 

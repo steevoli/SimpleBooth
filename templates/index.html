@@ -22,6 +22,29 @@
             padding: 8px 16px;
         }
     }
+
+    #captureBtn {
+        animation: pulse 2s infinite;
+    }
+
+    #captureBtn:disabled {
+        animation: none;
+    }
+
+    @keyframes pulse {
+        0%, 100% {
+            transform: scale(1);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        50% {
+            transform: scale(1.05);
+            box-shadow: 0 4px 25px rgba(0,0,0,0.5);
+        }
+    }
+
+    #processingOverlay {
+        background-color: rgba(0,0,0,0.85);
+    }
     </style>
     <!-- Conteneur vidéo avec marges élégantes -->
     <div class="video-container position-relative d-flex align-items-center justify-content-center" id="videoContainer" style="height: calc(100vh - 2rem); width: calc(100vw - 2rem);">
@@ -57,6 +80,14 @@
                 <small>Vérifiez le papier de l'imprimante avant de prendre une photo</small>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Overlay de traitement -->
+<div id="processingOverlay" class="d-none position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" style="z-index: 2000;">
+    <div class="text-center text-white">
+        <div class="mb-4"><i class="fas fa-spinner fa-spin" style="font-size: 4rem;"></i></div>
+        <h2 class="mb-0">Traitement en cours...</h2>
     </div>
 </div>
 
@@ -174,6 +205,9 @@ function capturePhoto() {
 }
 
 async function takePicture() {
+    const overlay = document.getElementById('processingOverlay');
+    overlay.classList.remove('d-none');
+    overlay.style.display = 'flex';
     try {
         const response = await fetch('/capture', {
             method: 'POST',
@@ -194,7 +228,9 @@ async function takePicture() {
     } catch (error) {
         console.error('Erreur lors de la capture:', error);
         alert('Erreur lors de la prise de photo: ' + error.message);
-        
+
+        overlay.classList.add('d-none');
+        overlay.style.display = 'none';
         resetCaptureButton();
     }
 }
@@ -204,6 +240,9 @@ function resetCaptureButton() {
     const captureBtn = document.getElementById('captureBtn');
     captureBtn.disabled = false;
     captureBtn.innerHTML = '<i class="fas fa-camera fa-2x"></i>';
+    const overlay = document.getElementById('processingOverlay');
+    overlay.classList.add('d-none');
+    overlay.style.display = 'none';
 }
 
 // Variables pour le diaporama
