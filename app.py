@@ -13,6 +13,7 @@ import signal
 import atexit
 import base64
 import sys
+import shutil
 from datetime import datetime
 from runware import Runware, IImageInference
 from config_utils import (
@@ -137,6 +138,18 @@ def detect_serial_ports():
     return available_ports
 
 
+def detect_usb_drives():
+    """Détecte les périphériques USB montés"""
+    usb_devices = []
+    for base in ["/media", "/mnt"]:
+        if os.path.exists(base):
+            for entry in os.listdir(base):
+                path = os.path.join(base, entry)
+                if os.path.ismount(path):
+                    usb_devices.append({"path": path, "label": entry})
+    return usb_devices
+
+
 # Variables globales
 config = load_config()
 current_photo = None
@@ -255,6 +268,39 @@ def print_photo():
             else:
                 return jsonify({'success': False, 'error': f'Erreur d\'impression: {error_msg}'})
             
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/usb_devices')
+def usb_devices():
+    """Retourne la liste des périphériques USB disponibles"""
+    return jsonify(detect_usb_drives())
+
+
+@app.route('/save_photo', methods=['POST'])
+def save_photo():
+    """Sauvegarder la photo actuelle sur un périphérique USB"""
+    global current_photo
+    if not current_photo:
+        return jsonify({'success': False, 'error': "Aucune photo à sauvegarder"})
+
+    data = request.get_json()
+    device_path = data.get('path') if data else None
+    if not device_path or not os.path.exists(device_path):
+        return jsonify({'success': False, 'error': 'Périphérique USB invalide'})
+
+    photo_path = None
+    if os.path.exists(os.path.join(PHOTOS_FOLDER, current_photo)):
+        photo_path = os.path.join(PHOTOS_FOLDER, current_photo)
+    elif os.path.exists(os.path.join(EFFECT_FOLDER, current_photo)):
+        photo_path = os.path.join(EFFECT_FOLDER, current_photo)
+    else:
+        return jsonify({'success': False, 'error': 'Photo introuvable'})
+
+    try:
+        shutil.copy(photo_path, os.path.join(device_path, os.path.basename(photo_path)))
+        return jsonify({'success': True, 'message': 'Photo sauvegardée avec succès!'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
