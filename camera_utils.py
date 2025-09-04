@@ -6,6 +6,18 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def detect_pi_camera():
+    """Vérifie si une caméra Raspberry Pi est disponible."""
+    try:
+        from picamera2 import Picamera2
+        Picamera2()
+        logger.info("[PI CAMERA] Caméra Raspberry Pi détectée")
+        return True
+    except Exception as e:
+        logger.info(f"[PI CAMERA] Aucune caméra Raspberry Pi détectée: {e}")
+        return False
+
+
 def detect_cameras():
     """Detect available USB cameras."""
     available_cameras = []
@@ -69,6 +81,67 @@ def detect_cameras():
             logger.info(f"[CAMERA] Erreur générale lors de la détection de la caméra {i}: {e}")
     logger.info(f"[CAMERA] Détection terminée. {len(available_cameras)} caméra(s) fonctionnelle(s) trouvée(s)")
     return available_cameras
+
+
+class PiCamera:
+    def __init__(self):
+        self.picam2 = None
+        self.thread = None
+        self.is_running = False
+        self.frame = None
+        self.lock = threading.Lock()
+
+    def start(self):
+        if self.is_running:
+            return True
+        try:
+            from picamera2 import Picamera2
+            self.picam2 = Picamera2()
+            config = self.picam2.create_video_configuration(
+                main={"size": (1280, 720), "format": "RGB888"},
+                controls={"FrameRate": 15}
+            )
+            self.picam2.configure(config)
+            self.picam2.start()
+            self.is_running = True
+            self.thread = threading.Thread(target=self._capture_loop, daemon=True)
+            self.thread.start()
+            logger.info("[PI CAMERA] Caméra démarrée avec succès")
+            return True
+        except Exception as e:
+            logger.info(f"[PI CAMERA] Erreur initialisation: {e}")
+            self.stop()
+            return False
+
+    def _capture_loop(self):
+        while self.is_running:
+            try:
+                frame = self.picam2.capture_array()
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                with self.lock:
+                    self.frame = jpeg.tobytes()
+                time.sleep(0.03)
+            except Exception as e:
+                logger.info(f"[PI CAMERA] Erreur capture: {e}")
+                time.sleep(0.1)
+
+    def get_frame(self):
+        with self.lock:
+            return self.frame
+
+    def stop(self):
+        self.is_running = False
+        if self.thread:
+            self.thread.join(timeout=1.0)
+        if self.picam2:
+            try:
+                self.picam2.stop()
+                self.picam2.close()
+            except Exception:
+                pass
+            self.picam2 = None
+        logger.info("[PI CAMERA] Caméra arrêtée")
 
 
 class UsbCamera:

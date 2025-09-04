@@ -70,9 +70,9 @@
                 </button>
             </div>
             <div class="col">
-                <button class="btn btn-success w-100 btn-review" onclick="printPhoto()">
-                    <i class="fas fa-print"></i>
-                    <span>Imprimer</span>
+                <button class="btn btn-success w-100 btn-review" onclick="savePhoto()">
+                    <i class="fas fa-save"></i>
+                    <span>Sauvegarder</span>
                 </button>
             </div>
             <div class="col">
@@ -89,9 +89,9 @@
             </div>
             {% else %}
             <div class="col-4">
-                <button class="btn btn-success w-100 btn-review" onclick="printPhoto()">
-                    <i class="fas fa-print"></i>
-                    <span>Imprimer</span>
+                <button class="btn btn-success w-100 btn-review" onclick="savePhoto()">
+                    <i class="fas fa-save"></i>
+                    <span>Sauvegarder</span>
                 </button>
             </div>
             <div class="col-4">
@@ -111,13 +111,13 @@
     </div>
 </div>
 
-<!-- Overlay d'impression en plein écran -->
-<div id="printOverlay" class="d-none" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); z-index: 9999; display: flex; align-items: center; justify-content: center;">
+<!-- Overlay de sauvegarde en plein écran -->
+<div id="saveOverlay" class="d-none" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); z-index: 9999; display: flex; align-items: center; justify-content: center;">
     <div class="text-center text-white">
         <div class="mb-4">
             <i class="fas fa-spinner fa-spin" style="font-size: 4rem;"></i>
         </div>
-        <h2 class="mb-3">Impression en cours...</h2>
+        <h2 class="mb-3">Sauvegarde en cours...</h2>
         <p class="mb-0">Veuillez patienter</p>
     </div>
 </div>
@@ -170,89 +170,110 @@
         </div>
     </div>
 </div>
+
+<!-- Modale de sélection du périphérique USB -->
+<div class="modal fade" id="savePhotoModal" tabindex="-1" aria-labelledby="savePhotoModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="savePhotoModalLabel">Sélectionner un périphérique USB</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <select class="form-select" id="usbSelect"></select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="confirmSave()">Sauvegarder</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-async function printPhoto() {
-    const printBtn = event.target;
-    const originalContent = printBtn.innerHTML;
-    const overlay = document.getElementById('printOverlay');
-    
-    // Désactiver le bouton et afficher l'overlay
-    printBtn.disabled = true;
-    printBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Impression...';
+async function savePhoto() {
+    try {
+        const response = await fetch('/usb_devices');
+        const devices = await response.json();
+
+        if (!Array.isArray(devices) || devices.length === 0) {
+            alert('Aucun périphérique USB détecté');
+            return;
+        }
+
+        const select = document.getElementById('usbSelect');
+        select.innerHTML = '';
+        devices.forEach(d => {
+            const option = document.createElement('option');
+            option.value = d.path;
+            option.textContent = d.label || d.path;
+            select.appendChild(option);
+        });
+
+        const modal = new bootstrap.Modal(document.getElementById('savePhotoModal'));
+        modal.show();
+    } catch (error) {
+        console.error('Erreur lors de la récupération des périphériques USB:', error);
+        alert('Erreur lors de la détection des périphériques USB');
+    }
+}
+
+async function confirmSave() {
+    const modalEl = document.getElementById('savePhotoModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    modal.hide();
+
+    const devicePath = document.getElementById('usbSelect').value;
+    const overlay = document.getElementById('saveOverlay');
     overlay.classList.remove('d-none');
     overlay.style.display = 'flex';
-    
+
     try {
-        const response = await fetch('/print_photo', {
+        const response = await fetch('/save_photo', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-            }
+            },
+            body: JSON.stringify({ path: devicePath })
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
-            // Succès de l'impression - modifier le contenu de l'overlay
-            overlay.innerHTML = 
+            overlay.innerHTML =
                 '<div class="text-center text-white">' +
                 '<div class="mb-4">' +
                 '<i class="fas fa-check-circle" style="font-size: 4rem; color: #28a745;"></i>' +
                 '</div>' +
-                '<h2 class="mb-3">Impression terminée !</h2>' +
+                '<h2 class="mb-3">Sauvegarde terminée !</h2>' +
                 '<p class="mb-0">Redirection en cours...</p>' +
                 '</div>';
-            
-            // Rediriger vers l'accueil après 3 secondes
+
             setTimeout(() => {
                 window.location.href = '/';
             }, 3000);
-            
-        } else if (result.error_type === 'no_paper') {
-            // Cas spécifique du manque de papier - rediriger immédiatement vers l'index
-            overlay.innerHTML = 
-                '<div class="text-center text-white">' +
-                '<div class="mb-4">' +
-                '<i class="fas fa-exclamation-triangle" style="font-size: 4rem; color: #ffc107;"></i>' +
-                '</div>' +
-                '<h2 class="mb-3">Plus de papier !</h2>' +
-                '<p class="mb-0">Redirection en cours...</p>' +
-                '</div>';
-            
-            // Rediriger vers l'accueil avec paramètre pour afficher l'alerte
-            setTimeout(() => {
-                window.location.href = '/?show_paper_alert=1';
-            }, 2000);
-            
         } else {
-            throw new Error(result.error || 'Erreur d\'impression');
+            throw new Error(result.error || 'Erreur de sauvegarde');
         }
-        
+
     } catch (error) {
-        console.error('Erreur lors de l\'impression:', error);
-        
-        // Afficher l'erreur dans l'overlay
-        overlay.innerHTML = 
+        console.error('Erreur lors de la sauvegarde:', error);
+        overlay.innerHTML =
             '<div class="text-center text-white">' +
             '<div class="mb-4">' +
             '<i class="fas fa-exclamation-triangle" style="font-size: 4rem; color: #dc3545;"></i>' +
             '</div>' +
-            '<h2 class="mb-3">Erreur d\'impression</h2>' +
+            '<h2 class="mb-3">Erreur de sauvegarde</h2>' +
             '<p class="mb-3">' + error.message + '</p>' +
             '<button class="btn btn-light" onclick="closeOverlay()">Fermer</button>' +
             '</div>';
-        
-        // Réactiver le bouton
-        printBtn.disabled = false;
-        printBtn.innerHTML = originalContent;
     }
 }
 
 function closeOverlay() {
-    const overlay = document.getElementById('printOverlay');
+    const overlay = document.getElementById('saveOverlay');
     overlay.classList.add('d-none');
     overlay.style.display = 'none';
 }
