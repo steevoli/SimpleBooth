@@ -147,6 +147,11 @@ def detect_usb_drives():
                 path = os.path.join(base, entry)
                 if os.path.ismount(path):
                     usb_devices.append({"path": path, "label": entry})
+                elif os.path.isdir(path):
+                    for sub in os.listdir(path):
+                        subpath = os.path.join(path, sub)
+                        if os.path.ismount(subpath):
+                            usb_devices.append({"path": subpath, "label": sub})
     return usb_devices
 
 
@@ -289,18 +294,30 @@ def save_photo():
     device_path = data.get('path') if data else None
     if not device_path or not os.path.exists(device_path):
         return jsonify({'success': False, 'error': 'Périphérique USB invalide'})
-
     photo_path = None
     if os.path.exists(os.path.join(PHOTOS_FOLDER, current_photo)):
         photo_path = os.path.join(PHOTOS_FOLDER, current_photo)
+    elif os.path.exists(os.path.join(PHOTOS_FOLDER, 'printed', current_photo)):
+        photo_path = os.path.join(PHOTOS_FOLDER, 'printed', current_photo)
     elif os.path.exists(os.path.join(EFFECT_FOLDER, current_photo)):
         photo_path = os.path.join(EFFECT_FOLDER, current_photo)
     else:
         return jsonify({'success': False, 'error': 'Photo introuvable'})
 
+    usage = shutil.disk_usage(device_path)
+    # if usage.free < os.path.getsize(photo_path):
+    #     return jsonify({'success': False, 'error': 'Espace insuffisant sur la clé USB'})
+
+    save_dir = os.path.join(device_path, 'SimpleBooth')
+    os.makedirs(save_dir, exist_ok=True)
+
+    dest = os.path.join(save_dir, os.path.basename(photo_path))
+    if os.path.exists(dest):
+        return jsonify({'success': False, 'error': "Photo déjà présente sur le périphérique"})
+
     try:
-        shutil.copy(photo_path, os.path.join(device_path, os.path.basename(photo_path)))
-        return jsonify({'success': True, 'message': 'Photo sauvegardée avec succès!'})
+        shutil.copy(photo_path, dest)
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
