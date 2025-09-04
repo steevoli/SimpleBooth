@@ -305,8 +305,8 @@ def save_photo():
         return jsonify({'success': False, 'error': 'Photo introuvable'})
 
     usage = shutil.disk_usage(device_path)
-    # if usage.free < os.path.getsize(photo_path):
-    #     return jsonify({'success': False, 'error': 'Espace insuffisant sur la clé USB'})
+    if usage.free < os.path.getsize(photo_path):
+        return jsonify({'success': False, 'error': 'Espace insuffisant sur la clé USB'})
 
     save_dir = os.path.join(device_path, 'SimpleBooth')
     os.makedirs(save_dir, exist_ok=True)
