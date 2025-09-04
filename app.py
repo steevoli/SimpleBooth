@@ -317,7 +317,7 @@ def save_photo():
 
     try:
         shutil.copy(photo_path, dest)
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'message': 'Photo sauvegardée avec succès!'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
