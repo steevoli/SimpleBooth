@@ -22,8 +22,6 @@ DEFAULT_CONFIG = {
     'telegram_bot_token': '',
     'telegram_chat_id': '',
     'telegram_send_type': 'photos',
-    'camera_type': 'picamera',
-    'usb_camera_id': 0,
     'printer_enabled': True,
     'printer_port': '/dev/ttyAMA0',
     'printer_baudrate': 9600,
