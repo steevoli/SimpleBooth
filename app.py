@@ -23,7 +23,7 @@ from config_utils import (
     save_config,
     ensure_directories,
 )
-from camera_utils import UsbCamera, PiCamera, detect_cameras
+from camera_utils import PiCamera
 from telegram_utils import send_to_telegram
 
 app = Flask(__name__)
@@ -160,7 +160,6 @@ config = load_config()
 current_photo = None
 camera_active = False
 camera_process = None
-usb_camera = None
 pi_camera = None
 
 @app.route('/')
@@ -183,9 +182,7 @@ def capture_photo():
         filename = f'photo_{timestamp}.jpg'
         filepath = os.path.join(PHOTOS_FOLDER, filename)
 
-        camera_type = config.get('camera_type', 'picamera')
-
-        if camera_type == 'picamera' and pi_camera:
+        if pi_camera:
             # Utiliser l'API de la caméra Pi pour capturer l'image
             pi_camera.capture_photo(filepath)
             current_photo = filename
@@ -534,9 +531,6 @@ def admin():
     photo_count = sum(1 for p in photos if p['type'] == 'photo')
     effect_count = sum(1 for p in photos if p['type'] == 'effet')
     
-    # Détecter les caméras USB disponibles
-    available_cameras = detect_cameras()
-    
     # Détecter les ports série disponibles
     available_serial_ports = detect_serial_ports()
     
@@ -548,7 +542,6 @@ def admin():
                            photos=photos,
                            photo_count=photo_count,
                            effect_count=effect_count,
-                           available_cameras=available_cameras,
                            available_serial_ports=available_serial_ports,
                            show_toast=request.args.get('show_toast', False))
 
@@ -582,17 +575,6 @@ def save_admin_config():
         config['telegram_bot_token'] = request.form.get('telegram_bot_token', '')
         config['telegram_chat_id'] = request.form.get('telegram_chat_id', '')
         config['telegram_send_type'] = request.form.get('telegram_send_type', 'photos')
-        
-        # Configuration de la caméra
-        config['camera_type'] = request.form.get('camera_type', 'picamera')
-        
-        # Récupérer l'ID de la caméra USB sélectionnée
-        selected_camera = request.form.get('usb_camera_select', '0')
-        # L'ID est stocké comme premier caractère de la valeur
-        try:
-            config['usb_camera_id'] = int(selected_camera)
-        except ValueError:
-            config['usb_camera_id'] = 0
         
         # Configuration de l'imprimante
         config['printer_enabled'] = 'printer_enabled' in request.form
@@ -758,73 +740,33 @@ def video_stream():
                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 def generate_video_stream():
-    """Générer le flux vidéo MJPEG selon le type de caméra configuré"""
-    global camera_process, usb_camera, pi_camera, last_frame
-    
-    # Déterminer le type de caméra à utiliser
-    camera_type = config.get('camera_type', 'picamera')
-    
+    """Générer le flux vidéo MJPEG de la Pi Camera"""
+    global camera_process, pi_camera, last_frame
+
     try:
         # Arrêter tout processus caméra existant
         stop_camera_process()
-        
-        # Utiliser la caméra USB si configurée
-        if camera_type == 'usb':
-            logger.info("[CAMERA] Démarrage de la caméra USB...")
-            camera_id = config.get('usb_camera_id', 0)
-            usb_camera = UsbCamera(camera_id=camera_id)
-            if not usb_camera.start():
-                raise Exception(f"Impossible de démarrer la caméra USB avec ID {camera_id}")
-            
-            # Générateur de frames pour la caméra USB
-            while True:
-                frame = usb_camera.get_frame()
-                if frame:
-                    # Stocker la frame pour capture instantanée
-                    with frame_lock:
-                        last_frame = frame
-                    
-                    # Envoyer la frame au navigateur
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n'
-                           b'Content-Length: ' + str(len(frame)).encode() + b'\r\n\r\n' +
-                           frame + b'\r\n')
-                else:
-                    time.sleep(0.03)  # Attendre si pas de frame disponible
-        
-        # Utiliser la Pi Camera par défaut
-        else:
-            logger.info("[CAMERA] Démarrage de la Pi Camera...")
-            pi_camera = PiCamera()
-            active_camera = 'pi'
 
-            # Si la Pi Camera échoue, tenter une caméra USB comme solution de secours
-            if not pi_camera.start():
-                logger.info("[CAMERA] Pi Camera indisponible, tentative de caméra USB...")
-                camera_id = config.get('usb_camera_id', 0)
-                usb_camera = UsbCamera(camera_id=camera_id)
-                if not usb_camera.start():
-                    raise Exception("Impossible de démarrer la Pi Camera ni la caméra USB")
-                active_camera = 'usb'
+        logger.info("[CAMERA] Démarrage de la Pi Camera...")
+        pi_camera = PiCamera()
+        if not pi_camera.start():
+            raise Exception("Impossible de démarrer la Pi Camera")
 
-            while True:
-                frame = (
-                    pi_camera.get_frame() if active_camera == 'pi'
-                    else usb_camera.get_frame()
-                )
-                if frame:
-                    # Stocker la frame pour capture instantanée
-                    with frame_lock:
-                        last_frame = frame
+        while True:
+            frame = pi_camera.get_frame()
+            if frame:
+                # Stocker la frame pour capture instantanée
+                with frame_lock:
+                    last_frame = frame
 
-                    # Envoyer la frame au navigateur
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n'
-                           b'Content-Length: ' + str(len(frame)).encode() + b'\r\n\r\n' +
-                           frame + b'\r\n')
-                else:
-                    time.sleep(0.03)
-                
+                # Envoyer la frame au navigateur
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n'
+                       b'Content-Length: ' + str(len(frame)).encode() + b'\r\n\r\n' +
+                       frame + b'\r\n')
+            else:
+                time.sleep(0.03)
+
     except Exception as e:
         logger.info(f"Erreur flux vidéo: {e}")
         # Envoyer une frame d'erreur
@@ -836,16 +778,8 @@ def generate_video_stream():
         stop_camera_process()
 
 def stop_camera_process():
-    """Arrêter proprement le processus caméra (Pi Camera ou USB)"""
-    global camera_process, usb_camera, pi_camera
-
-    # Arrêter la caméra USB si active
-    if usb_camera:
-        try:
-            usb_camera.stop()
-        except Exception as e:
-            logger.info(f"[CAMERA] Erreur lors de l'arrêt de la caméra USB: {e}")
-        usb_camera = None
+    """Arrêter proprement le processus de la Pi Camera"""
+    global camera_process, pi_camera
 
     # Arrêter la Pi Camera si active
     if pi_camera:
