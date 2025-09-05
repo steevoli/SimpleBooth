@@ -23,7 +23,7 @@ from config_utils import (
     save_config,
     ensure_directories,
 )
-from camera_utils import UsbCamera, detect_cameras
+from camera_utils import UsbCamera, PiCamera, detect_cameras
 from telegram_utils import send_to_telegram
 
 app = Flask(__name__)
@@ -161,6 +161,7 @@ current_photo = None
 camera_active = False
 camera_process = None
 usb_camera = None
+pi_camera = None
 
 @app.route('/')
 def index():
@@ -173,35 +174,40 @@ frame_lock = threading.Lock()
 
 @app.route('/capture', methods=['POST'])
 def capture_photo():
-    """Capturer la frame MJPEG actuelle directement depuis le flux vidéo"""
-    global current_photo, last_frame
-    
+    """Prendre une photo avec la caméra active"""
+    global current_photo, last_frame, pi_camera
+
     try:
         # Générer un nom de fichier unique
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f'photo_{timestamp}.jpg'
         filepath = os.path.join(PHOTOS_FOLDER, filename)
-        
-        # Capturer la frame actuelle du flux MJPEG
-        with frame_lock:
-            if last_frame is not None:
-                # Sauvegarder la frame directement
+
+        camera_type = config.get('camera_type', 'picamera')
+
+        if camera_type == 'picamera' and pi_camera:
+            # Utiliser l'API de la caméra Pi pour capturer l'image
+            pi_camera.capture_photo(filepath)
+            current_photo = filename
+            logger.info(f"Photo capturée via PiCamera: {filename}")
+        else:
+            # Capturer la dernière frame du flux vidéo
+            with frame_lock:
+                if last_frame is None:
+                    logger.info("Aucune frame disponible dans le flux")
+                    return jsonify({'success': False, 'error': 'Aucune frame disponible'})
                 with open(filepath, 'wb') as f:
                     f.write(last_frame)
-                
                 current_photo = filename
                 logger.info(f"Frame MJPEG capturée avec succès: {filename}")
-                
-                # Envoyer sur Telegram si activé
-                send_type = config.get('telegram_send_type', 'photos')
-                if send_type in ['photos', 'both']:
-                    threading.Thread(target=send_to_telegram, args=(filepath, config, "photo")).start()
-                
-                return jsonify({'success': True, 'filename': filename})
-            else:
-                logger.info("Aucune frame disponible dans le flux")
-                return jsonify({'success': False, 'error': 'Aucune frame disponible'})
-            
+
+        # Envoyer sur Telegram si activé
+        send_type = config.get('telegram_send_type', 'photos')
+        if send_type in ['photos', 'both']:
+            threading.Thread(target=send_to_telegram, args=(filepath, config, "photo")).start()
+
+        return jsonify({'success': True, 'filename': filename})
+
     except Exception as e:
         logger.info(f"Erreur lors de la capture: {e}")
         return jsonify({'success': False, 'error': f'Erreur de capture: {str(e)}'})
@@ -753,7 +759,7 @@ def video_stream():
 
 def generate_video_stream():
     """Générer le flux vidéo MJPEG selon le type de caméra configuré"""
-    global camera_process, usb_camera, last_frame
+    global camera_process, usb_camera, pi_camera, last_frame
     
     # Déterminer le type de caméra à utiliser
     camera_type = config.get('camera_type', 'picamera')
@@ -789,68 +795,24 @@ def generate_video_stream():
         # Utiliser la Pi Camera par défaut
         else:
             logger.info("[CAMERA] Démarrage de la Pi Camera...")
-            # Commande libcamera-vid pour flux MJPEG - résolution 16/9
-            cmd = [
-                'libcamera-vid',
-                '--codec', 'mjpeg',
-                '--width', '1280',   # Résolution native plus compatible
-                '--height', '720',   # Vrai 16/9 sans bandes noires
-                '--framerate', '15', # Framerate plus élevé pour cette résolution
-                '--timeout', '0',    # Durée infinie
-                '--output', '-',     # Sortie vers stdout
-                '--inline',          # Headers inline
-                '--flush',           # Flush immédiat
-                '--nopreview'        # Pas d'aperçu local
-            ]
-            
-            camera_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                bufsize=0
-            )
-            
-            # Buffer pour assembler les frames JPEG
-            buffer = b''
-            
-            while camera_process and camera_process.poll() is None:
-                try:
-                    # Lire les données par petits blocs
-                    chunk = camera_process.stdout.read(1024)
-                    if not chunk:
-                        break
-                        
-                    buffer += chunk
-                    
-                    # Chercher les marqueurs JPEG
-                    while True:
-                        # Chercher le début d'une frame JPEG (0xFFD8)
-                        start = buffer.find(b'\xff\xd8')
-                        if start == -1:
-                            break
-                            
-                        # Chercher la fin de la frame JPEG (0xFFD9)
-                        end = buffer.find(b'\xff\xd9', start + 2)
-                        if end == -1:
-                            break
-                            
-                        # Extraire la frame complète
-                        jpeg_frame = buffer[start:end + 2]
-                        buffer = buffer[end + 2:]
-                        
-                        # Stocker la frame pour capture instantanée
-                        with frame_lock:
-                            last_frame = jpeg_frame
-                        
-                        # Envoyer la frame au navigateur
-                        yield (b'--frame\r\n'
-                               b'Content-Type: image/jpeg\r\n'
-                               b'Content-Length: ' + str(len(jpeg_frame)).encode() + b'\r\n\r\n' +
-                               jpeg_frame + b'\r\n')
-                               
-                except Exception as e:
-                    logger.info(f"[CAMERA] Erreur lecture flux: {e}")
-                    break
+            pi_camera = PiCamera()
+            if not pi_camera.start():
+                raise Exception("Impossible de démarrer la Pi Camera")
+
+            while True:
+                frame = pi_camera.get_frame()
+                if frame:
+                    # Stocker la frame pour capture instantanée
+                    with frame_lock:
+                        last_frame = frame
+
+                    # Envoyer la frame au navigateur
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n'
+                           b'Content-Length: ' + str(len(frame)).encode() + b'\r\n\r\n' +
+                           frame + b'\r\n')
+                else:
+                    time.sleep(0.03)
                 
     except Exception as e:
         logger.info(f"Erreur flux vidéo: {e}")
@@ -864,8 +826,8 @@ def generate_video_stream():
 
 def stop_camera_process():
     """Arrêter proprement le processus caméra (Pi Camera ou USB)"""
-    global camera_process, usb_camera
-    
+    global camera_process, usb_camera, pi_camera
+
     # Arrêter la caméra USB si active
     if usb_camera:
         try:
@@ -873,16 +835,24 @@ def stop_camera_process():
         except Exception as e:
             logger.info(f"[CAMERA] Erreur lors de l'arrêt de la caméra USB: {e}")
         usb_camera = None
-    
-    # Arrêter le processus libcamera-vid si actif
+
+    # Arrêter la Pi Camera si active
+    if pi_camera:
+        try:
+            pi_camera.stop()
+        except Exception as e:
+            logger.info(f"[CAMERA] Erreur lors de l'arrêt de la Pi Camera: {e}")
+        pi_camera = None
+
+    # Arrêter tout processus externe si nécessaire
     if camera_process:
         try:
             camera_process.terminate()
             camera_process.wait(timeout=2)
-        except:
+        except Exception:
             try:
                 camera_process.kill()
-            except:
+            except Exception:
                 pass
         camera_process = None
 
