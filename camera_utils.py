@@ -255,21 +255,36 @@ class PiCamera:
         except Exception as e:
             logger.info(f"[PI CAMERA] picamera2 indisponible: {e}")
 
-        # Enfin, essayer OpenCV avec backend V4L2 (libcamera)
+        # Enfin, essayer OpenCV avec différents backends
         try:
             self.backend = 'opencv'
-            self.camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
-            if not self.camera.isOpened():
-                raise RuntimeError("Impossible d'ouvrir la caméra Pi avec OpenCV")
-            self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
-            self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
-            self.camera.set(cv2.CAP_PROP_FPS, self.framerate)
-            self.is_running = True
-            self.thread = threading.Thread(target=self._capture_loop_opencv)
-            self.thread.daemon = True
-            self.thread.start()
-            logger.info("[PI CAMERA] Caméra initialisée via OpenCV/libcamera")
-            return True
+            backends = [cv2.CAP_V4L2, cv2.CAP_ANY]
+            for backend in backends:
+                backend_name = 'V4L2' if backend == cv2.CAP_V4L2 else 'AUTO'
+                logger.info(f"[PI CAMERA] Tentative d'ouverture via OpenCV backend {backend_name}...")
+                try:
+                    self.camera = cv2.VideoCapture(0, backend)
+                    if not self.camera.isOpened():
+                        logger.info(f"[PI CAMERA] Backend {backend_name} : échec d'ouverture")
+                        if self.camera:
+                            self.camera.release()
+                        continue
+                    self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
+                    self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+                    self.camera.set(cv2.CAP_PROP_FPS, self.framerate)
+                    self.is_running = True
+                    self.thread = threading.Thread(target=self._capture_loop_opencv)
+                    self.thread.daemon = True
+                    self.thread.start()
+                    logger.info(f"[PI CAMERA] Caméra initialisée via OpenCV backend {backend_name}")
+                    return True
+                except Exception as e_backend:
+                    logger.info(f"[PI CAMERA] Erreur backend {backend_name}: {e_backend}")
+                    if self.camera:
+                        self.camera.release()
+                    self.camera = None
+                    continue
+            raise RuntimeError("Impossible d'ouvrir la caméra Pi avec OpenCV")
         except Exception as e:
             logger.info(f"[PI CAMERA] Erreur initialisation OpenCV: {e}")
             self.camera = None
