@@ -193,7 +193,12 @@ update_system() {
 }
 
 install_dependencies() {
-  local pkgs=(python3 python3-venv python3-pip build-essential libcap2-bin libcap-dev xserver-xorg xinit x11-xserver-utils unclutter)
+  local pkgs=(
+    python3 python3-venv python3-pip
+    build-essential libcap2-bin libcap-dev
+    xserver-xorg xinit x11-xserver-utils unclutter
+    libcamera-apps python3-opencv python3-picamera2
+  )
   [[ -n "$CHROMIUM_PKG" ]] && pkgs+=("$CHROMIUM_PKG")
   step "Installation des dépendances"
   log "${#pkgs[@]} paquets à installer"
