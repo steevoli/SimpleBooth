@@ -796,11 +796,22 @@ def generate_video_stream():
         else:
             logger.info("[CAMERA] Démarrage de la Pi Camera...")
             pi_camera = PiCamera()
+            active_camera = 'pi'
+
+            # Si la Pi Camera échoue, tenter une caméra USB comme solution de secours
             if not pi_camera.start():
-                raise Exception("Impossible de démarrer la Pi Camera")
+                logger.info("[CAMERA] Pi Camera indisponible, tentative de caméra USB...")
+                camera_id = config.get('usb_camera_id', 0)
+                usb_camera = UsbCamera(camera_id=camera_id)
+                if not usb_camera.start():
+                    raise Exception("Impossible de démarrer la Pi Camera ni la caméra USB")
+                active_camera = 'usb'
 
             while True:
-                frame = pi_camera.get_frame()
+                frame = (
+                    pi_camera.get_frame() if active_camera == 'pi'
+                    else usb_camera.get_frame()
+                )
                 if frame:
                     # Stocker la frame pour capture instantanée
                     with frame_lock:
