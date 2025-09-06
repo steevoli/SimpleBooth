@@ -130,7 +130,8 @@ L'application supporte deux types de caméras, configurables depuis la page d'ad
 
 ### Pi Camera (par défaut)
 
-- Utilise le module `libcamera-vid` pour capturer le flux vidéo
+- Utilise la bibliothèque **Picamera2** pour le flux vidéo
+- Capture les photos en pleine résolution via `libcamera-still` lorsque disponible
 - Idéal pour les Raspberry Pi avec caméra officielle
 - Aucune configuration supplémentaire requise
 

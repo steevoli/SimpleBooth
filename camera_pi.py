@@ -1,4 +1,6 @@
 import logging
+import subprocess
+import shutil
 from typing import Tuple
 
 import cv2
@@ -55,7 +57,8 @@ class PiCameraStream:
 
         # Fallback OpenCV
         self.backend = "opencv"
-        self.cap = cv2.VideoCapture(0)
+        # Le backend V4L2 est recommandé pour les caméras Pi via OpenCV
+        self.cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
         if not self.cap.isOpened():
             logger.error("Impossible d'ouvrir la caméra via OpenCV")
             return False
@@ -91,6 +94,21 @@ class PiCameraStream:
                 logger.error("Erreur capture photo Picamera2: %s", e)
                 raise
         elif self.backend == "opencv" and self.cap:
+            # Si les utilitaires libcamera sont disponibles, utiliser libcamera-still
+            libcamera_still = shutil.which("libcamera-still")
+            if libcamera_still:
+                try:
+                    subprocess.run(
+                        [libcamera_still, "-o", path, "--immediate"],
+                        check=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+                    return
+                except subprocess.CalledProcessError as e:
+                    logger.error(
+                        "libcamera-still a échoué (%s), repli sur OpenCV pour la capture", e
+                    )
             ret, frame = self.cap.read()
             if not ret:
                 raise RuntimeError("Impossible de capturer une image")
