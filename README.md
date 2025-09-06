@@ -73,7 +73,7 @@ Un script `setup.sh` est fourni pour automatiser l'ensemble du processus sur un 
     ```
     Ce script s'occupe de :
     - Mettre à jour les paquets système.
-    - Installer les dépendances système (`libcamera-apps`, `python3-opencv`, `python3-picamera2`).
+    - Installer les dépendances système (`python3-picamera2`, `libcamera-apps`, `v4l-utils`, `python3-opencv`).
     - Créer un environnement virtuel `venv`.
     - Installer les dépendances Python de `requirements.txt` dans cet environnement.
     - Creer un mode kiosk automatique au demarrage du systeme.
@@ -98,7 +98,8 @@ Suivez ces étapes pour une installation manuelle.
     ```bash
     sudo apt update
     sudo apt upgrade
-    sudo apt install libcamera-apps python3-opencv python3-picamera2
+    sudo apt install -y python3-picamera2 libcamera-apps v4l-utils
+    sudo apt install python3-opencv
     ```
 
 3.  **Installer les dépendances Python :**

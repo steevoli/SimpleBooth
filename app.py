@@ -23,7 +23,8 @@ from config_utils import (
     save_config,
     ensure_directories,
 )
-from camera_utils import PiCamera
+import cv2
+from camera_pi import PiCameraStream
 from telegram_utils import send_to_telegram
 
 app = Flask(__name__)
@@ -748,22 +749,24 @@ def generate_video_stream():
         stop_camera_process()
 
         logger.info("[CAMERA] Démarrage de la Pi Camera...")
-        pi_camera = PiCamera()
-        if not pi_camera.start():
+        pi_camera = PiCameraStream()
+        if not pi_camera.open():
             raise Exception("Impossible de démarrer la Pi Camera")
 
         while True:
             frame = pi_camera.get_frame()
-            if frame:
+            if frame is not None:
+                _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                data = jpeg.tobytes()
                 # Stocker la frame pour capture instantanée
                 with frame_lock:
-                    last_frame = frame
+                    last_frame = data
 
                 # Envoyer la frame au navigateur
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n'
-                       b'Content-Length: ' + str(len(frame)).encode() + b'\r\n\r\n' +
-                       frame + b'\r\n')
+                       b'Content-Length: ' + str(len(data)).encode() + b'\r\n\r\n' +
+                       data + b'\r\n')
             else:
                 time.sleep(0.03)
 
@@ -784,7 +787,7 @@ def stop_camera_process():
     # Arrêter la Pi Camera si active
     if pi_camera:
         try:
-            pi_camera.stop()
+            pi_camera.close()
         except Exception as e:
             logger.info(f"[CAMERA] Erreur lors de l'arrêt de la Pi Camera: {e}")
         pi_camera = None
